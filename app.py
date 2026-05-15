@@ -50,11 +50,12 @@ st.markdown("""
 # Session state
 # ──────────────────────────────────────────────
 for key, default in [
-    ("queue",      []),
-    ("results",    {}),
-    ("generating", False),
-    ("next_idx",   0),
-    ("api_key",    ""),
+    ("queue",       []),
+    ("results",     {}),
+    ("generating",  False),
+    ("next_idx",    0),
+    ("api_key",     ""),
+    ("tavily_key",  ""),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -67,6 +68,13 @@ if not st.session_state.api_key:
         pass
     if not st.session_state.api_key:
         st.session_state.api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not st.session_state.tavily_key:
+        try:
+            st.session_state.tavily_key = st.secrets.get("TAVILY_API_KEY", "")
+        except Exception:
+            pass
+    if not st.session_state.tavily_key:
+        st.session_state.tavily_key = os.environ.get("TAVILY_API_KEY", "")
 
 # ──────────────────────────────────────────────
 # Header (always shown)
@@ -79,23 +87,29 @@ st.divider()
 # API key gate
 # ──────────────────────────────────────────────
 if not st.session_state.api_key:
-    st.markdown("### 🔑 Enter your Anthropic API key to get started")
+    st.markdown("### 🔑 Enter your API keys to get started")
     st.markdown(
-        "Your key is used only for this session to call the Claude API. "
-        "It is never stored permanently.  \n"
-        "Get your key at [console.anthropic.com](https://console.anthropic.com)."
+        "Your keys are used only for this session and never stored permanently."
     )
     with st.form("api_key_form"):
         key_input = st.text_input(
-            "Anthropic API key",
+            "Anthropic API key *",
             type="password",
             placeholder="sk-ant-...",
+            help="Required. Get yours at console.anthropic.com",
+        )
+        tavily_input = st.text_input(
+            "Tavily API key (optional — enables live web search)",
+            type="password",
+            placeholder="tvly-...",
+            help="Optional but recommended. Free at app.tavily.com. Without this, profiles use Claude training knowledge only.",
         )
         submitted = st.form_submit_button("Continue →", type="primary")
         if submitted:
-            key_input = key_input.strip()
+            key_input    = key_input.strip()
+            tavily_input = tavily_input.strip()
             if not key_input.startswith("sk-"):
-                st.error("That doesn't look like a valid Anthropic API key (should start with `sk-`).")
+                st.error("Anthropic key should start with `sk-`. Please check and try again.")
             else:
                 try:
                     test_client = anthropic.Anthropic(api_key=key_input)
@@ -104,12 +118,14 @@ if not st.session_state.api_key:
                         max_tokens=10,
                         messages=[{"role": "user", "content": "Hi"}]
                     )
-                    st.session_state.api_key = key_input
+                    st.session_state.api_key    = key_input
+                    st.session_state.tavily_key = tavily_input
                     st.rerun()
                 except anthropic.AuthenticationError:
-                    st.error("Invalid API key — authentication failed. Please check and try again.")
+                    st.error("Invalid Anthropic API key — authentication failed. Please check and try again.")
                 except Exception:
-                    st.session_state.api_key = key_input
+                    st.session_state.api_key    = key_input
+                    st.session_state.tavily_key = tavily_input
                     st.rerun()
     st.stop()
 
@@ -169,16 +185,23 @@ with st.sidebar:
             st.session_state.results = {}
             st.rerun()
 
+    st.divider()
+    if st.session_state.tavily_key:
+        st.success("🌐 Live web search: ON", icon="✅")
+    else:
+        st.warning("🌐 Live web search: OFF (no Tavily key)", icon="⚠️")
+
     st.markdown(
         '<p class="conf-note">NUS CONFIDENTIAL · for internal use only · NOT for external circulation</p>',
         unsafe_allow_html=True
     )
 
     st.divider()
-    if st.button("🔑 Change API key", type="secondary"):
-        st.session_state.api_key = ""
-        st.session_state.queue   = []
-        st.session_state.results = {}
+    if st.button("🔑 Change API keys", type="secondary"):
+        st.session_state.api_key    = ""
+        st.session_state.tavily_key = ""
+        st.session_state.queue      = []
+        st.session_state.results    = {}
         st.rerun()
 
 # ──────────────────────────────────────────────
@@ -327,7 +350,7 @@ if st.session_state.generating:
 
         try:
             progress_cb(f"[{i+1}/{total}] Researching {name}…")
-            data = research_prospect(name, client, progress_callback=progress_cb)
+            data = research_prospect(name, client, progress_callback=progress_cb, tavily_key=st.session_state.tavily_key)
 
             if data is None:
                 raise ValueError(
