@@ -188,19 +188,20 @@ def research_prospect(
     prospect_name: str,
     client: anthropic.Anthropic,
     progress_callback=None,
+    tavily_key: str = "",
 ) -> Optional[dict]:
 
     def log(msg: str):
         if progress_callback:
             progress_callback(msg)
 
-    # Check for Tavily key
-    tavily_key = ""
-    try:
-        import streamlit as st
-        tavily_key = st.secrets.get("TAVILY_API_KEY", "")
-    except Exception:
-        pass
+    # Also check env/secrets as fallback if not passed in
+    if not tavily_key:
+        try:
+            import streamlit as st
+            tavily_key = st.secrets.get("TAVILY_API_KEY", "")
+        except Exception:
+            pass
     if not tavily_key:
         tavily_key = os.environ.get("TAVILY_API_KEY", "")
 
